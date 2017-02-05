@@ -24,8 +24,6 @@ Possible tokens:
 var keyword = []string{"and", "else", "end", "if", "in", "let", "loop", "recur", "then"}
 var operator = []string{"(", ")", "=", "&&", "||", "!", "<", "==", "+", "*", "-"}
 
-type StateFunc func(byte) int
-
 func check(e error) {
 	if e != nil {
 		panic(e)
@@ -66,30 +64,6 @@ func IsWhitespace(b byte) bool {
 	return (b == ' ' || b == '\n' || b == '\t')
 }
 
-
-
-func stateWhitespace(b byte) StateFunc {
-	if IsWhitespace(b) {
-		return stateWhitespace
-	} else if IsDigit(b) {
-		return stateDigit
-	} else if IsLetter(b) {
-		return stateLetter
-	}
-
-	fmt.Println("Unknown symbol:", b)
-	return stateWhitespace
-}
-
-func stateDigit(b byte) StateFunc {
-	
-}
-
-func stateLetter(b byte) StateFunc {
-
-}
-
-
 func main() {
 	dat, err := ioutil.ReadFile("../src/github.com/compilers/sample.txt")
 	str := string(dat)
@@ -98,20 +72,14 @@ func main() {
 	fmt.Println("Here's the whole text:")
 	fmt.Println(str)
 
-	start := 0
+	// for index, value := range []byte(str) {
+	// 	if value == ' ' || value == '\n' {
+	// 		continue
+	// 	}
 
-	StateEmpty, StateIdentifier, StateInteger := 0, 1, 2
-
-	state := StateEmpty
-
-	for index, value := range []byte(str) {
-		if value == ' ' || value == '\n' {
-			continue
-		}
-
-		switch state {
-		case StateEmpty:
-			if value == 
-		}
-	}
+	// 	switch state {
+	// 	case StateEmpty:
+	// 		if value ==
+	// 	}
+	// }
 }
