@@ -137,98 +137,102 @@ Each function takes the character as parameter and returns the new state it's in
 
 // We are in stateWhitespace
 func stateWhitespace(b rune) (*stateFunction, bool) {
-	// ignoring all other whitespaces
+	// default value: white spaces
+	newState := &stateWhitespaceID
+
 	if IsWhitespace(b) {
-		return &stateWhitespaceID, false
+		// ignoring all other whitespaces
+		newState = &stateWhitespaceID
+
+	} else if IsDigit(b) {
+		// start of an integer
+		newState = &stateIntegerID
+
+	} else if IsLetter(b) {
+		// start of an identifier
+		newState = &stateIdentifierID
+
+	} else if IsStartOfOperator(b) {
+		// start of an operator
+		newState = &stateOperatorID
+
+	} else {
+		// invalid character
+		fmt.Println("Error token (stateWhitespace):", fmt.Sprintf("%c", b), "=", b)
 	}
 
-	// start of an integer
-	if IsDigit(b) {
-		return &stateIntegerID, true
-	}
-
-	// start of an identifier
-	if IsLetter(b) {
-		return &stateIdentifierID, true
-	}
-
-	// start of an operator
-	if IsStartOfOperator(b) {
-		return &stateOperatorID, true
-	}
-
-	// invalid character
-	fmt.Println("Error token (stateWhitespace):", fmt.Sprintf("%c", b), "=", b)
-	return &stateWhitespaceID, false
+	return newState, newState != &stateWhitespaceID
 }
 
 // We are in stateInteger
+// Note that letters are not allowed to be in here
 func stateInteger(b rune) (*stateFunction, bool) {
+	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
-		return &stateWhitespaceID, true
-	}
+		newState = &stateWhitespaceID
 
-	if IsDigit(b) {
-		return &stateIntegerID, false
-	}
+	} else if IsDigit(b) {
+		newState = &stateIntegerID
 
-	if IsLetter(b) {
+	} else if IsLetter(b) {
 		fmt.Println("Identifiers can't start with numbers!")
-		return &stateIdentifierID, true
+		newState = &stateIdentifierID
+
+	} else if IsStartOfOperator(b) {
+		newState = &stateOperatorID
+
+	} else {
+		fmt.Println("Error token (stateInteger):", fmt.Sprintf("%c", b), "=", b)
 	}
 
-	if IsStartOfOperator(b) {
-		return &stateOperatorID, true
-	}
-
-	fmt.Println("Error token (stateInteger):", fmt.Sprintf("%c", b), "=", b)
-	return &stateWhitespaceID, true
+	return newState, newState != &stateIntegerID
 }
 
 // We are in stateIdentifier
 func stateIdentifier(b rune) (*stateFunction, bool) {
+	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
-		return &stateWhitespaceID, true
+		newState = &stateWhitespaceID
+
+	} else if IsDigit(b) {
+		newState = &stateIdentifierID
+
+	} else if IsLetter(b) {
+		newState = &stateIdentifierID
+
+	} else if IsStartOfOperator(b) {
+		newState = &stateOperatorID
+
+	} else {
+		fmt.Println("Error token (stateIdentifier):", fmt.Sprintf("%c", b), "=", b)
 	}
 
-	if IsDigit(b) {
-		return &stateIdentifierID, false
-	}
-
-	if IsLetter(b) {
-		return &stateIdentifierID, false
-	}
-
-	if IsStartOfOperator(b) {
-		return &stateOperatorID, true
-	}
-
-	fmt.Println("Error token (stateIdentifier):", fmt.Sprintf("%c", b), "=", b)
-	return &stateWhitespaceID, true
+	return newState, newState != &stateIdentifierID
 }
 
 // We are in stateOperator
 func stateOperator(b rune) (*stateFunction, bool) {
+	newState := &stateWhitespaceID
+
 	if IsWhitespace(b) {
-		return &stateWhitespaceID, true
+		newState = &stateWhitespaceID
+
+	} else if IsDigit(b) {
+		newState = &stateIntegerID
+
+	} else if IsLetter(b) {
+		newState = &stateIdentifierID
+
+	} else if IsStartOfOperator(b) {
+		newState = &stateOperatorID
+
+	} else {
+		fmt.Println("Error token (stateOperator):", fmt.Sprintf("%c", b), "=", b)
 	}
 
-	if IsDigit(b) {
-		return &stateIntegerID, true
-	}
-
-	if IsLetter(b) {
-		return &stateIdentifierID, true
-	}
-
-	if IsStartOfOperator(b) {
-		return &stateOperatorID, false
-	}
-
-	fmt.Println("Error token (stateOperator):", fmt.Sprintf("%c", b), "=", b)
-	return &stateWhitespaceID, true
+	return newState, newState != &stateOperatorID
 }
 
 // When switching states, we interpret the input we've just gotten.
