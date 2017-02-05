@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"unicode/utf8"
 )
 
 /*
@@ -21,18 +22,49 @@ Possible tokens:
 
 */
 
+// List of keywords
 var keyword = []string{"and", "else", "end", "if", "in", "let", "loop", "recur", "then"}
+
+// List of operators
 var operator = []string{"(", ")", "=", "&&", "||", "!", "<", "==", "+", "*", "-"}
 
+// List of single character operators. Used later on to check, if character is in operator more efficiently
+var operatorStart = []rune{}
+
+// To simulate states I use function pointers.
+// eg. if string starts with a letter, it'll probably be an identifier -> stateIdentifierID
+type stateFunction func(rune) (*stateFunction, bool)
+
+// To avoid initialization loop, those variables will be initialized in main
+var stateWhitespaceID stateFunction
+var stateIntegerID stateFunction
+var stateIdentifierID stateFunction
+var stateOperatorID stateFunction
+
+// If error messages were returned, quit program
+// Only used for reading the file right now
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
 
+// arrContainsString checks, if given string appears in a string array
+// Used for operators and keywords
 func arrContainsString(s string, arr []string) bool {
 	for _, val := range arr {
 		if s == val {
+			return true
+		}
+	}
+	return false
+}
+
+// arrContainsRune checks, if given rune appears in a rune array
+// Used for operators (operator starts with rune)
+func arrContainsRune(r rune, arr []rune) bool {
+	for _, val := range arr {
+		if r == val {
 			return true
 		}
 	}
@@ -49,37 +81,258 @@ func IsOperator(s string) bool {
 	return arrContainsString(s, operator)
 }
 
-// IsLetter returns true, if byte value represents an upper- or lowercase letter from a-z
-func IsLetter(b byte) bool {
-	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+// isPossibleOperator checks, if the given string could be a substring of an operator
+// Used to distinguish between operators. eg. input = "++&&=" consists of "+", "+", "&&" and "=", so we kind of split them apart
+func isPossibleOperator(s string) int {
+	// -1: Definitely not an operator
+	//  0: Could be one
+	//  1: Definitely an operator
+	returnVal := -1
+
+	// Only works for operators of length 1 or 2!
+	length := utf8.RuneCountInString(s)
+	if length == 1 {
+		if IsOperator(s) {
+			returnVal = 1
+		} else if IsStartOfOperator([]rune(s)[0]) {
+			returnVal = 0
+		}
+	} else if length == 2 {
+		// Possible extension problem, when operators get longer than 2 characters
+		if IsOperator(s) {
+			returnVal = 1
+		}
+	}
+	return returnVal
 }
 
-// IsDigit returns true, if byte value represents a digit number 0-9
-func IsDigit(b byte) bool {
+// IsStartOfOperator returns true, if given letter is the beginning of an operator
+func IsStartOfOperator(b rune) bool {
+	return arrContainsRune(b, operatorStart)
+}
+
+// IsLetter returns true, if rune value represents an upper- or lowercase letter from a-z
+func IsLetter(b rune) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b == '_')
+}
+
+// IsDigit returns true, if rune value represents a digit number 0-9
+func IsDigit(b rune) bool {
 	return (b >= '0' && b <= '9')
 }
 
-// IsWhitespace returns true, if byte value represents a whitespace, line break or tab
-func IsWhitespace(b byte) bool {
-	return (b == ' ' || b == '\n' || b == '\t')
+// IsWhitespace returns true, if rune value represents a whitespace, line break, tab or carriage return (13)
+func IsWhitespace(b rune) bool {
+	return (b == ' ' || b == '\n' || b == '\t' || b == 13)
 }
 
+/*
+Here start the state functions that are called with the function pointers.
+We can be in 4 states: Whitespace, Operator, Identifier or Integer.
+Depending on what rune / character comes next, we switch states or stay in the same one.
+If we switch states that means we completed reading a value type. eg. if we switch from stateInteger -> stateWhitespace, we just read an integer.
+
+Each function takes the character as parameter and returns the new state it's in and whether or not it switched states
+*/
+
+// We are in stateWhitespace
+func stateWhitespace(b rune) (*stateFunction, bool) {
+	// ignoring all other whitespaces
+	if IsWhitespace(b) {
+		return &stateWhitespaceID, false
+	}
+
+	// start of an integer
+	if IsDigit(b) {
+		return &stateIntegerID, true
+	}
+
+	// start of an identifier
+	if IsLetter(b) {
+		return &stateIdentifierID, true
+	}
+
+	// start of an operator
+	if IsStartOfOperator(b) {
+		return &stateOperatorID, true
+	}
+
+	// invalid character
+	fmt.Println("Error token (stateWhitespace):", fmt.Sprintf("%c", b), "=", b)
+	return &stateWhitespaceID, false
+}
+
+// We are in stateInteger
+func stateInteger(b rune) (*stateFunction, bool) {
+
+	if IsWhitespace(b) {
+		return &stateWhitespaceID, true
+	}
+
+	if IsDigit(b) {
+		return &stateIntegerID, false
+	}
+
+	if IsLetter(b) {
+		fmt.Println("Identifiers can't start with numbers!")
+		return &stateIdentifierID, true
+	}
+
+	if IsStartOfOperator(b) {
+		return &stateOperatorID, true
+	}
+
+	fmt.Println("Error token (stateInteger):", fmt.Sprintf("%c", b), "=", b)
+	return &stateWhitespaceID, true
+}
+
+// We are in stateIdentifier
+func stateIdentifier(b rune) (*stateFunction, bool) {
+
+	if IsWhitespace(b) {
+		return &stateWhitespaceID, true
+	}
+
+	if IsDigit(b) {
+		return &stateIdentifierID, false
+	}
+
+	if IsLetter(b) {
+		return &stateIdentifierID, false
+	}
+
+	if IsStartOfOperator(b) {
+		return &stateOperatorID, true
+	}
+
+	fmt.Println("Error token (stateIdentifier):", fmt.Sprintf("%c", b), "=", b)
+	return &stateWhitespaceID, true
+}
+
+// We are in stateOperator
+func stateOperator(b rune) (*stateFunction, bool) {
+	if IsWhitespace(b) {
+		return &stateWhitespaceID, true
+	}
+
+	if IsDigit(b) {
+		return &stateIntegerID, true
+	}
+
+	if IsLetter(b) {
+		return &stateIdentifierID, true
+	}
+
+	if IsStartOfOperator(b) {
+		return &stateOperatorID, false
+	}
+
+	fmt.Println("Error token (stateOperator):", fmt.Sprintf("%c", b), "=", b)
+	return &stateWhitespaceID, true
+}
+
+// When switching states, we interpret the input we've just gotten.
+// eg. if we switched from stateInteger -> stateWhitespace, then we just read an integer
+// eg. if we switched from stateIdentifier -> stateWhitespace, it could be either an identifier or a keyword
+// eg. if we switched from stateWhitespace -> stateInteger, we only had white spaces. Ignore those
+func interpretInput(slice string, length int, state *stateFunction) {
+	switch state {
+	case &stateIdentifierID:
+		// Check if identifier could be a keyword or not
+		if IsKeyword(slice) {
+			fmt.Println("Found keyword    :", slice)
+		} else {
+			fmt.Println("Found identifier :", slice)
+		}
+
+	case &stateIntegerID:
+		// Found an integer
+		fmt.Println("Found integer    :", slice)
+
+	case &stateOperatorID:
+		// Found an operator
+		// Note that it could be multiple operators clustered together. So we have to pull those apart
+		start, end := 0, 1
+		for ; end <= length; end++ {
+			outcome := isPossibleOperator(slice[start:end])
+
+			// if outcome == -1, then we probably finished our last valid operator and start with a new one
+			if outcome == -1 {
+				fmt.Println("Found operator   :", slice[start:end-1])
+				start = end - 1
+			}
+		}
+
+		// there could be an operator at the end
+		if start != length {
+			fmt.Println("Fount operator   :", slice[start:length])
+		}
+	}
+}
+
+// main
 func main() {
 	dat, err := ioutil.ReadFile("../src/github.com/compilers/sample.txt")
-	str := string(dat)
 
+	// check if we actually read the file
 	check(err)
+
+	// convert file to string. Print if for testing purposes
+	str := string(dat)
 	fmt.Println("Here's the whole text:")
 	fmt.Println(str)
+	fmt.Println()
 
-	// for index, value := range []byte(str) {
-	// 	if value == ' ' || value == '\n' {
-	// 		continue
-	// 	}
+	// initialize state IDs with corresponding function
+	stateWhitespaceID = stateWhitespace
+	stateIntegerID = stateInteger
+	stateIdentifierID = stateIdentifier
+	stateOperatorID = stateOperator
 
-	// 	switch state {
-	// 	case StateEmpty:
-	// 		if value ==
-	// 	}
-	// }
+	// initialize operatorStart with first character of each operator (eg. "&&" -> '&')
+	for _, val := range operator {
+		r := []rune(val)[0]
+		if !arrContainsRune(r, operatorStart) {
+			operatorStart = append(operatorStart, r)
+		}
+	}
+
+	// for substrings we always slice it from start to the current index
+	start := 0
+
+	// currentState set to white space at the beginning
+	var currentState = &stateWhitespaceID
+	// newState always set for each character we read
+	var newState *stateFunction
+	// bool to check, if we changed from our last state
+	var changed bool
+
+	// slices to take apart our tokens
+	var slice string
+
+	// we use index and value after our loop, so we declare those outside
+	var index int
+	var value rune
+
+	for index, value = range []rune(str) {
+		newState, changed = (*currentState)(value)
+
+		// state didn't change, read next character
+		if !changed {
+			continue
+		}
+
+		// state changed. Interpret our slice
+		slice = str[start:index]
+		interpretInput(slice, index-start, currentState)
+
+		// start set to current index, the start of our next token
+		start = index
+
+		// currentState changed to the new one
+		currentState = newState
+	}
+
+	// loop doesn't get very last operator, so we have to include it here
+	interpretInput(str[start:index+1], index-start+1, currentState)
 }
