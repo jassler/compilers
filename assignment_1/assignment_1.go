@@ -1,20 +1,10 @@
 package main
 
+import "github.com/compilers/parser"
+
 // main
 func main() {
-	// fileName := "../src/github.com/compilers/sample.txt"
+	fileName := "../src/github.com/compilers/sampleIF.txt"
 
-	// ScanFile(fileName)
-
-	i1 := ExprInteger{1}
-	i2 := ExprInteger{2}
-	i3 := ExprInteger{3}
-
-	con := ExprIf{
-		condition:   i1,
-		consequent:  i2,
-		alternative: i3,
-	}
-
-	con.PrintExpr(0)
+	parser.ParseFile(fileName)
 }

@@ -1,8 +1,9 @@
-package main
+package scanner
 
 import (
 	"fmt"
 	"io/ioutil"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -18,15 +19,13 @@ Possible tokens:
 -> operator		(, ), =, &&, ||, !, <, ==, +, *, -
 
 -> integer		Sequence of digits
-
-
 */
 
-// List of keywords
-var keyword = []string{"and", "else", "end", "if", "in", "let", "loop", "recur", "then"}
+// List of keywords. We get those keywords from token.go
+var keyword []string
 
-// List of operators
-var operator = []string{"(", ")", "!", "<", "+", "*", "-", "=", "==", "&&", "||"}
+// List of operators. We get those operators from token.go
+var operator []string
 
 // List of single character operators. Used later on to check, if character is in operator more efficiently
 var operatorStart = []rune{}
@@ -95,7 +94,7 @@ func isPossibleOperator(s string) int {
 	if length == 1 {
 		if IsOperator(s) {
 			returnVal = 1
-		} else if IsStartOfOperator([]rune(s)[0]) {
+		} else if isStartOfOperator([]rune(s)[0]) {
 			returnVal = 0
 		}
 	} else if length == 2 {
@@ -108,7 +107,7 @@ func isPossibleOperator(s string) int {
 }
 
 // IsStartOfOperator returns true, if given letter is the beginning of an operator
-func IsStartOfOperator(b rune) bool {
+func isStartOfOperator(b rune) bool {
 	return arrContainsRune(b, operatorStart)
 }
 
@@ -152,7 +151,7 @@ func stateWhitespace(b rune) (*stateFunction, bool) {
 		// start of an identifier
 		newState = &stateIdentifierID
 
-	} else if IsStartOfOperator(b) {
+	} else if isStartOfOperator(b) {
 		// start of an operator
 		newState = &stateOperatorID
 
@@ -179,7 +178,7 @@ func stateInteger(b rune) (*stateFunction, bool) {
 		fmt.Println("Identifiers can't start with numbers!")
 		newState = &stateIdentifierID
 
-	} else if IsStartOfOperator(b) {
+	} else if isStartOfOperator(b) {
 		newState = &stateOperatorID
 
 	} else {
@@ -202,7 +201,7 @@ func stateIdentifier(b rune) (*stateFunction, bool) {
 	} else if IsLetter(b) {
 		newState = &stateIdentifierID
 
-	} else if IsStartOfOperator(b) {
+	} else if isStartOfOperator(b) {
 		newState = &stateOperatorID
 
 	} else {
@@ -225,7 +224,7 @@ func stateOperator(b rune) (*stateFunction, bool) {
 	} else if IsLetter(b) {
 		newState = &stateIdentifierID
 
-	} else if IsStartOfOperator(b) {
+	} else if isStartOfOperator(b) {
 		newState = &stateOperatorID
 
 	} else {
@@ -239,21 +238,28 @@ func stateOperator(b rune) (*stateFunction, bool) {
 // eg. if we switched from stateInteger -> stateWhitespace, then we just read an integer
 // eg. if we switched from stateIdentifier -> stateWhitespace, it could be either an identifier or a keyword
 // eg. if we switched from stateWhitespace -> stateInteger, we only had white spaces. Ignore those
-func interpretInput(slice string, length int, state *stateFunction) {
+func interpretInput(slice string, length int, state *stateFunction, sc *Scanner) {
+	token := Token{tokenID: -1, tokenVal: nil}
+
 	switch state {
 	case &stateIdentifierID:
+
 		// Check if identifier could be a keyword or not
 		if IsKeyword(slice) {
-			fmt.Println("Found keyword    :", slice)
+			token.tokenID = MapKeyword(slice)
 		} else {
-			fmt.Println("Found identifier :", slice)
+			token.tokenID = TokenIdentifier
+			token.tokenVal = slice
 		}
 
 	case &stateIntegerID:
-		// Found an integer
-		fmt.Println("Found integer    :", slice)
+		token.tokenID = TokenInteger
+		i, _ := strconv.Atoi(slice)
+		token.tokenVal = i
 
 	case &stateOperatorID:
+
+		replace := false
 		// Found an operator
 		// Note that it could be multiple operators clustered together. So we have to pull those apart
 		start, end := 0, 1
@@ -262,36 +268,70 @@ func interpretInput(slice string, length int, state *stateFunction) {
 
 			// if outcome == -1, then we probably finished our last valid operator and start with a new one
 			if outcome == -1 {
-				fmt.Println("Found operator   :", slice[start:end-1])
+				s := slice[start : end-1]
+				id := MapOperator(s)
+
+				if id < 0 {
+					fmt.Printf("\"%s\" is not a valid operator.\n", s)
+				} else {
+					if replace {
+						token = Token{tokenID: id, tokenVal: nil}
+					} else {
+						token.tokenID = id
+					}
+					sc.scannedTokens = append(sc.scannedTokens, token)
+					replace = true
+				}
+
 				start = end - 1
 			}
 		}
 
 		// there could be an operator at the end
 		if start != length {
-			fmt.Println("Fount operator   :", slice[start:length])
+			s := slice[start:length]
+			id := MapOperator(s)
+
+			if id < 0 {
+				fmt.Printf("\"%s\" is not a valid operator.\n", s)
+			} else {
+				if replace {
+					token = Token{tokenID: id, tokenVal: nil}
+				} else {
+					token.tokenID = id
+				}
+
+				sc.scannedTokens = append(sc.scannedTokens, token)
+			}
 		}
+
+		return
+	}
+
+	if token.tokenID >= 0 {
+		sc.scannedTokens = append(sc.scannedTokens, token)
 	}
 }
 
 // ScanFile scans file
-func ScanFile(fileName string) {
-	dat, err := ioutil.ReadFile(fileName)
+func scanFile(sc *Scanner) {
+	dat, err := ioutil.ReadFile(sc.filename)
 
 	// check if we actually read the file
 	check(err)
 
-	// convert file to string. Print if for testing purposes
+	// convert file content to string.
 	str := string(dat)
-	fmt.Println("Here's the whole text:")
-	fmt.Println(str)
-	fmt.Println()
 
 	// initialize state IDs with corresponding function
 	stateWhitespaceID = stateWhitespace
 	stateIntegerID = stateInteger
 	stateIdentifierID = stateIdentifier
 	stateOperatorID = stateOperator
+
+	// initialize keyword and operator array
+	keyword = GetKeywords()
+	operator = GetOperators()
 
 	// initialize operatorStart with first character of each operator (eg. "&&" -> '&')
 	for _, val := range operator {
@@ -328,7 +368,7 @@ func ScanFile(fileName string) {
 
 		// state changed. Interpret our slice
 		slice = str[start:index]
-		interpretInput(slice, index-start, currentState)
+		interpretInput(slice, index-start, currentState, sc)
 
 		// start set to current index, the start of our next token
 		start = index
@@ -338,5 +378,5 @@ func ScanFile(fileName string) {
 	}
 
 	// loop doesn't get very last operator, so we have to include it here
-	interpretInput(str[start:index+1], index-start+1, currentState)
+	interpretInput(str[start:index+1], index-start+1, currentState, sc)
 }
