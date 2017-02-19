@@ -33,7 +33,7 @@ func parseExpression(scan *scanner.Scanner) Expression {
 
 	switch t.GetID() {
 	case scanner.TokenInteger:
-		e = ExprInteger{i: t.GetValue().(int64)}
+		e = ExprInteger{i: int64(t.GetValue().(int))}
 
 	case scanner.TokenIf:
 		e = parseIf(scan)

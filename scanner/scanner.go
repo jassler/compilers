@@ -44,7 +44,7 @@ func (s Scanner) PrintTokens() {
 }
 
 // NextToken increments token index and returns new token. Returns false if end has been already reached
-func (s Scanner) NextToken() (*Token, bool) {
+func (s *Scanner) NextToken() (*Token, bool) {
 	if s.index >= s.length {
 		return nil, false
 	}
