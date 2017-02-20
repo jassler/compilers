@@ -14,6 +14,10 @@ func Interpret(expr *parser.Expression) {
 
 }
 
+// interpretExpression evaluates the type of Expression we have.
+// Possible types of expression:
+// - ExprInteger: Return int value of Expression
+// - ExprIf:      Call interpretIf function that further evaluates the result of our given expression
 func interpretExpression(expr *parser.Expression) int64 {
 	switch (*expr).(type) {
 	case parser.ExprInteger:
@@ -28,6 +32,7 @@ func interpretExpression(expr *parser.Expression) int64 {
 	}
 }
 
+// interpretIf checks, if condition is not 0. If that's the case, we return the int value of our consequent, else the alternative.
 func interpretIf(expr *parser.ExprIf) int64 {
 	if interpretExpression(expr.GetCondition()) != 0 {
 		return interpretExpression(expr.GetConsequent())
