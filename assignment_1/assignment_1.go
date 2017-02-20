@@ -1,10 +1,30 @@
 package main
 
-import "github.com/compilers/parser"
+import (
+	"fmt"
+	"os"
+
+	"github.com/compilers/interpreter"
+	"github.com/compilers/parser"
+	"github.com/compilers/scanner"
+)
 
 // main
 func main() {
-	fileName := "../src/github.com/compilers/sampleIF.txt"
+	lenArgs := len(os.Args)
 
-	parser.ParseFile(fileName)
+	if lenArgs < 2 {
+		fmt.Println("Usage: program <filename>")
+		return
+	}
+
+	for _, fileName := range os.Args[1:] {
+		if lenArgs > 2 {
+			fmt.Println(fileName)
+		}
+		scan := scanner.NewScanner(fileName)
+		expr := parser.Parse(scan)
+		interpreter.Interpret(expr)
+	}
+
 }

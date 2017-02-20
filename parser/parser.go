@@ -10,16 +10,16 @@ func ParseFile(path string) {
 }
 
 // Parse parses scanned file
-func Parse(scan scanner.Scanner) {
+func Parse(scan scanner.Scanner) *Expression {
 
 	var e Expression
 
 	e = parseExpression(&scan)
 
-	e.PrintExpr(0)
+	return &e
 }
 
-func checkNextId(got int, expected int) {
+func checkNextID(got int, expected int) {
 	if got != expected {
 		panic("Did not get what was expected")
 	}
@@ -51,15 +51,15 @@ func parseIf(scan *scanner.Scanner) ExprIf {
 	e.condition = parseExpression(scan)
 
 	t, _ := scan.NextToken()
-	checkNextId(t.GetID(), scanner.TokenThen)
+	checkNextID(t.GetID(), scanner.TokenThen)
 	e.consequent = parseExpression(scan)
 
 	t, _ = scan.NextToken()
-	checkNextId(t.GetID(), scanner.TokenElse)
+	checkNextID(t.GetID(), scanner.TokenElse)
 	e.alternative = parseExpression(scan)
 
 	t, _ = scan.NextToken()
-	checkNextId(t.GetID(), scanner.TokenEnd)
+	checkNextID(t.GetID(), scanner.TokenEnd)
 
 	return e
 }
