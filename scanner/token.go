@@ -70,7 +70,6 @@ var mapOfOperators = map[string]int{
 type Token struct {
 	tokenID  int
 	tokenVal interface{}
-	lineNum  int
 }
 
 // GetID returns token id of token
@@ -81,11 +80,6 @@ func (t Token) GetID() int {
 // GetValue returns value of token
 func (t Token) GetValue() interface{} {
 	return t.tokenVal
-}
-
-// GetLineNumber returns line number where the token appears in the source code
-func (t Token) GetLineNumber() int {
-	return t.lineNum
 }
 
 func mapString(s string, m map[string]int) int {

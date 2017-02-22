@@ -3,12 +3,36 @@ package main
 import (
 	"fmt"
 	"os"
-	"reflect"
+
+	"container/list"
 
 	"github.com/compilers/interpreter"
 	"github.com/compilers/parser"
 	"github.com/compilers/scanner"
 )
+
+// printErrors returns true, if errors exist
+func printErrors(l *list.List) bool {
+	if l == nil {
+		return false
+	}
+
+	if l.Len() == 0 {
+		return false
+	}
+
+	ext := ""
+	if l.Len() > 1 {
+		ext = "s"
+	}
+
+	fmt.Printf("Found %d error%s\n", l.Len(), ext)
+
+	for e := l.Front(); e != nil; e = e.Next() {
+		fmt.Println((e.Value.(error)).Error())
+	}
+	return true
+}
 
 // main
 func main() {
@@ -24,39 +48,16 @@ func main() {
 			fmt.Println(fileName)
 		}
 
-		scan, err := scanner.NewScanner(fileName)
-
-		if err != nil {
-			s := "s"
-			if err.Len() == 1 {
-				s = ""
-			}
-
-			fmt.Printf("%d Syntax error%s found:\n", err.Len(), s)
-
-			for e := err.Front(); e != nil; e = e.Next() {
-				fmt.Println((e.Value.(error)).Error())
-			}
-
+		scan, errs := scanner.NewScanner(fileName)
+		if printErrors(errs) {
 			continue
 		}
 
-		expr, err := parser.Parse(scan)
-		if err != nil {
-			s := "s"
-			if err.Len() == 1 {
-				s = ""
-			}
-
-			fmt.Printf("%d Semantic error%s found:\n", err.Len(), s)
-			for e := err.Front(); e != nil; e = e.Next() {
-				fmt.Println((e.Value.(error)).Error())
-			}
-
+		expr, errs := parser.Parse(scan)
+		if printErrors(errs) {
 			continue
 		}
 
-		fmt.Println(reflect.TypeOf(expr))
 		interpreter.Interpret(expr)
 	}
 

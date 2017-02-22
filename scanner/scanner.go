@@ -1,7 +1,6 @@
 package scanner
 
 import "fmt"
-import "container/list"
 
 // Scanner contains all scanned tokens and the current index it's on
 type Scanner struct {
@@ -12,7 +11,7 @@ type Scanner struct {
 }
 
 // NewScanner reads file and returns scanner
-func NewScanner(path string) (Scanner, *list.List) {
+func NewScanner(path string) Scanner {
 	s := Scanner{
 		filename:      path,
 		scannedTokens: []Token{},
@@ -20,10 +19,10 @@ func NewScanner(path string) (Scanner, *list.List) {
 		index:         0,
 	}
 
-	err := scanFile(&s)
+	scanFile(&s)
 	s.length = len(s.scannedTokens)
 
-	return s, err
+	return s
 }
 
 // Filename returns filename of scanner

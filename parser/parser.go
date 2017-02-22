@@ -4,32 +4,28 @@ import (
 	"container/list"
 	"fmt"
 
-	"reflect"
-
 	"github.com/compilers/scanner"
 )
 
 // ParseFile parses file from given file
-func ParseFile(path string) (Expression, *list.List) {
+func ParseFile(path string) (*Expression, *list.List) {
 	scan, _ := scanner.NewScanner(path)
 
 	return Parse(scan)
 }
 
 // Parse parses scanned file
-func Parse(scan scanner.Scanner) (Expression, *list.List) {
+func Parse(scan scanner.Scanner) (*Expression, *list.List) {
 	var e Expression
 	err := list.New()
 
-	e = *parseExpression(&scan, err)
+	e = parseExpression(&scan, err)
 
 	if err.Len() == 0 {
 		err = nil
 	}
 
-	fmt.Println(reflect.TypeOf(e))
-
-	return e, err
+	return &e, err
 }
 
 // Creates error message
@@ -73,7 +69,7 @@ func checkNextToken(scan *scanner.Scanner, expected int, list *list.List) bool {
 }
 
 // parseExpression turns tokens into an expression
-func parseExpression(scan *scanner.Scanner, list *list.List) *Expression {
+func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
 	var e Expression
 
 	t, succ := scan.NextToken()
@@ -97,53 +93,47 @@ func parseExpression(scan *scanner.Scanner, list *list.List) *Expression {
 		return nil
 	}
 
-	return &e
+	return e
 }
 
 // parseIf tries to turn tokens into valid if expression.
 // Semantic: if <expr> then <expr> else <expr>
 // If semantic rule's not met, push error into our list
-func parseIf(scan *scanner.Scanner, list *list.List) *ExprIf {
+func parseIf(scan *scanner.Scanner, list *list.List) ExprIf {
 	var e ExprIf
 
 	// condition comes from an expression
 	e.condition = parseExpression(scan, list)
 	if e.condition == nil {
-		fmt.Println("Condition reached")
-		return nil
+		return e
 	}
 
 	// Expected token: then
 	if !checkNextToken(scan, scanner.TokenThen, list) {
-		fmt.Println("Then reached")
-		return nil
+		return e
 	}
 
 	// consequent comes from an expression
 	e.consequent = parseExpression(scan, list)
 	if e.consequent == nil {
-		fmt.Println("consequent reached")
-		return nil
+		return e
 	}
 
 	// Expected token: else
 	if !checkNextToken(scan, scanner.TokenElse, list) {
-		fmt.Println("else reached")
-		return nil
+		return e
 	}
 
 	// alternative comes from an expression
 	e.alternative = parseExpression(scan, list)
 	if e.alternative == nil {
-		fmt.Println("alternative reached")
-		return nil
+		return e
 	}
 
 	// Expected token: end
 	if !checkNextToken(scan, scanner.TokenEnd, list) {
-		fmt.Println("end reached")
-		return nil
+		return e
 	}
 
-	return &e
+	return e
 }
