@@ -44,6 +44,28 @@ func checkNextID(got int, expected int, t *scanner.Token) error {
 	return nil
 }
 
+// checkNextToken checks, if next token fullfills expectation. Returns true if that's the case
+func checkNextToken(scan *scanner.Scanner, expected int, list *list.List) bool {
+
+	t, succ := scan.NextToken()
+
+	// End of file reached
+	if !succ {
+		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(scanner.TokenThen), t))
+		return false
+	}
+
+	// Expected token
+	err := checkNextID(t.GetID(), scanner.TokenThen, t)
+
+	if err != nil {
+		list.PushBack(err)
+		return false
+	}
+
+	return true
+}
+
 // parseExpression turns tokens into an expression
 func parseExpression(scan *scanner.Scanner, list *list.List) *Expression {
 	var e Expression
@@ -84,19 +106,8 @@ func parseIf(scan *scanner.Scanner, list *list.List) *ExprIf {
 		return nil
 	}
 
-	t, succ := scan.NextToken()
-
-	// if not successful, then we've reached the end of our token array
-	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(scanner.TokenThen), t))
-		return nil
-	}
-
 	// Expected token: then
-	err := checkNextID(t.GetID(), scanner.TokenThen, t)
-
-	if err != nil {
-		list.PushBack(err)
+	if !checkNextToken(scan, scanner.TokenThen, list) {
 		return nil
 	}
 
@@ -107,15 +118,7 @@ func parseIf(scan *scanner.Scanner, list *list.List) *ExprIf {
 	}
 
 	// Expected token: else
-	t, succ = scan.NextToken()
-	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(scanner.TokenElse), t))
-		return nil
-	}
-
-	err = checkNextID(t.GetID(), scanner.TokenElse, t)
-	if err != nil {
-		list.PushBack(err)
+	if !checkNextToken(scan, scanner.TokenElse, list) {
 		return nil
 	}
 
@@ -126,15 +129,8 @@ func parseIf(scan *scanner.Scanner, list *list.List) *ExprIf {
 	}
 
 	// Expected token: end
-	t, succ = scan.NextToken()
-	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(scanner.TokenEnd), t))
+	if !checkNextToken(scan, scanner.TokenEnd, list) {
 		return nil
-	}
-
-	err = checkNextID(t.GetID(), scanner.TokenEnd, t)
-	if err != nil {
-		list.PushBack(err)
 	}
 
 	return &e
