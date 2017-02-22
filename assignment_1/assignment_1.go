@@ -22,8 +22,39 @@ func main() {
 		if lenArgs > 2 {
 			fmt.Println(fileName)
 		}
-		scan := scanner.NewScanner(fileName)
-		expr := parser.Parse(scan)
+
+		scan, err := scanner.NewScanner(fileName)
+
+		if err != nil {
+			s := "s"
+			if err.Len() == 1 {
+				s = ""
+			}
+
+			fmt.Printf("%d Syntax error%s found:\n", err.Len(), s)
+
+			for e := err.Front(); e != nil; e = e.Next() {
+				fmt.Println((e.Value.(error)).Error())
+			}
+
+			continue
+		}
+
+		expr, err := parser.Parse(scan)
+		if err != nil {
+			s := "s"
+			if err.Len() == 1 {
+				s = ""
+			}
+
+			fmt.Printf("%d Semantic error%s found:\n", err.Len(), s)
+			for e := err.Front(); e != nil; e = e.Next() {
+				fmt.Println((e.Value.(error)).Error())
+			}
+
+			continue
+		}
+
 		interpreter.Interpret(expr)
 	}
 
