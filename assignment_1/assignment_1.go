@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 
 	"github.com/compilers/interpreter"
 	"github.com/compilers/parser"
@@ -55,6 +56,7 @@ func main() {
 			continue
 		}
 
+		fmt.Println(reflect.TypeOf(expr))
 		interpreter.Interpret(expr)
 	}
 

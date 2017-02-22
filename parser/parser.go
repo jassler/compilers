@@ -4,25 +4,31 @@ import (
 	"container/list"
 	"fmt"
 
+	"reflect"
+
 	"github.com/compilers/scanner"
 )
 
 // ParseFile parses file from given file
-func ParseFile(path string) (*Expression, *list.List) {
+func ParseFile(path string) (Expression, *list.List) {
 	scan, _ := scanner.NewScanner(path)
 
 	return Parse(scan)
 }
 
 // Parse parses scanned file
-func Parse(scan scanner.Scanner) (*Expression, *list.List) {
+func Parse(scan scanner.Scanner) (Expression, *list.List) {
+	var e Expression
 	err := list.New()
 
-	e := parseExpression(&scan, err)
+	e = *parseExpression(&scan, err)
 
 	if err.Len() == 0 {
 		err = nil
 	}
+
+	fmt.Println(reflect.TypeOf(e))
+
 	return e, err
 }
 
@@ -51,12 +57,12 @@ func checkNextToken(scan *scanner.Scanner, expected int, list *list.List) bool {
 
 	// End of file reached
 	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(scanner.TokenThen), t))
+		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(expected), t))
 		return false
 	}
 
 	// Expected token
-	err := checkNextID(t.GetID(), scanner.TokenThen, t)
+	err := checkNextID(t.GetID(), expected, t)
 
 	if err != nil {
 		list.PushBack(err)
@@ -103,33 +109,39 @@ func parseIf(scan *scanner.Scanner, list *list.List) *ExprIf {
 	// condition comes from an expression
 	e.condition = parseExpression(scan, list)
 	if e.condition == nil {
+		fmt.Println("Condition reached")
 		return nil
 	}
 
 	// Expected token: then
 	if !checkNextToken(scan, scanner.TokenThen, list) {
+		fmt.Println("Then reached")
 		return nil
 	}
 
 	// consequent comes from an expression
 	e.consequent = parseExpression(scan, list)
 	if e.consequent == nil {
+		fmt.Println("consequent reached")
 		return nil
 	}
 
 	// Expected token: else
 	if !checkNextToken(scan, scanner.TokenElse, list) {
+		fmt.Println("else reached")
 		return nil
 	}
 
 	// alternative comes from an expression
 	e.alternative = parseExpression(scan, list)
 	if e.alternative == nil {
+		fmt.Println("alternative reached")
 		return nil
 	}
 
 	// Expected token: end
 	if !checkNextToken(scan, scanner.TokenEnd, list) {
+		fmt.Println("end reached")
 		return nil
 	}
 
