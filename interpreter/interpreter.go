@@ -3,13 +3,11 @@ package interpreter
 import (
 	"fmt"
 
-	"reflect"
-
 	"github.com/compilers/parser"
 )
 
 // Interpret interprets program from given expression
-func Interpret(expr parser.Expression) {
+func Interpret(expr *parser.Expression) {
 
 	res := interpretExpression(expr)
 	fmt.Println(res)
@@ -20,26 +18,24 @@ func Interpret(expr parser.Expression) {
 // Possible types of expression:
 // - ExprInteger: Return int value of Expression
 // - ExprIf:      Call interpretIf function that further evaluates the result of our given expression
-func interpretExpression(expr parser.Expression) int64 {
-
-	switch expr.(type) {
+func interpretExpression(expr *parser.Expression) int64 {
+	switch (*expr).(type) {
 	case parser.ExprInteger:
-		return expr.(parser.ExprInteger).GetInteger()
+		return (*expr).(parser.ExprInteger).GetInteger()
 
 	case parser.ExprIf:
-		exprIf := expr.(parser.ExprIf)
-		return interpretIf(exprIf)
+		exprIf := (*expr).(parser.ExprIf)
+		return interpretIf(&exprIf)
 
 	default:
-		panic("No valid expression received (only expr " + reflect.TypeOf(expr).String() + ")")
+		panic("No valid expression received")
 	}
 }
 
 // interpretIf checks, if condition is not 0. If that's the case, we return the int value of our consequent, else the alternative.
-func interpretIf(expr parser.ExprIf) int64 {
-	fmt.Println("Tried to do it in the interpretIf statement")
-	if interpretExpression(*expr.GetCondition()) != 0 {
-		return interpretExpression(*expr.GetConsequent())
+func interpretIf(expr *parser.ExprIf) int64 {
+	if interpretExpression(expr.GetCondition()) != 0 {
+		return interpretExpression(expr.GetConsequent())
 	}
-	return interpretExpression(*expr.GetAlternative())
+	return interpretExpression(expr.GetAlternative())
 }

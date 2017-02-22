@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"container/list"
 	"fmt"
 	"io/ioutil"
 	"strconv"
@@ -30,9 +31,12 @@ var operator []string
 // List of single character operators. Used later on to check, if character is in operator more efficiently
 var operatorStart = []rune{}
 
+// lineNum for tokens
+var lineNum int
+
 // To simulate states I use function pointers.
 // eg. if string starts with a letter, it'll probably be an identifier -> stateIdentifierID
-type stateFunction func(rune) (*stateFunction, bool)
+type stateFunction func(rune, *list.List) (*stateFunction, bool)
 
 // To avoid initialization loop, those variables will be initialized in main
 // Note that those IDs exist since GO doesn't support direct function references
@@ -41,12 +45,8 @@ var stateIntegerID stateFunction
 var stateIdentifierID stateFunction
 var stateOperatorID stateFunction
 
-// If error messages were returned, quit program
-// Only used for reading the file right now
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
+func createError(msg string, line int) error {
+	return fmt.Errorf("Syntax Error in line %d: %s", line, msg)
 }
 
 // arrContainsString checks, if given string appears in a string array
@@ -123,6 +123,9 @@ func IsDigit(b rune) bool {
 
 // IsWhitespace returns true, if rune value represents a whitespace, line break, tab or carriage return (13)
 func IsWhitespace(b rune) bool {
+	if b == '\n' {
+		lineNum++
+	}
 	return (b == ' ' || b == '\n' || b == '\t' || b == 13)
 }
 
@@ -136,7 +139,7 @@ Each function takes the character as parameter and returns the new state it's in
 */
 
 // We are in stateWhitespace
-func stateWhitespace(b rune) (*stateFunction, bool) {
+func stateWhitespace(b rune, l *list.List) (*stateFunction, bool) {
 	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
@@ -157,7 +160,7 @@ func stateWhitespace(b rune) (*stateFunction, bool) {
 
 	} else {
 		// invalid character
-		fmt.Println("Error token (stateWhitespace):", fmt.Sprintf("%c", b), "=", b)
+		l.PushBack(createError("Invalid token '"+string(b)+"' (code: "+strconv.Itoa(int(b))+")", lineNum))
 	}
 
 	return newState, newState != &stateWhitespaceID
@@ -165,7 +168,7 @@ func stateWhitespace(b rune) (*stateFunction, bool) {
 
 // We are in stateInteger
 // Note that letters are not allowed to be in here
-func stateInteger(b rune) (*stateFunction, bool) {
+func stateInteger(b rune, l *list.List) (*stateFunction, bool) {
 	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
@@ -175,21 +178,21 @@ func stateInteger(b rune) (*stateFunction, bool) {
 		newState = &stateIntegerID
 
 	} else if IsLetter(b) {
-		fmt.Println("Identifiers can't start with numbers!")
+		l.PushBack(createError("Identifiers can't start with numbers", lineNum))
 		newState = &stateIdentifierID
 
 	} else if isStartOfOperator(b) {
 		newState = &stateOperatorID
 
 	} else {
-		fmt.Println("Error token (stateInteger):", fmt.Sprintf("%c", b), "=", b)
+		l.PushBack(createError("Invalid token '"+string(b)+"' (code: "+strconv.Itoa(int(b))+")", lineNum))
 	}
 
 	return newState, newState != &stateIntegerID
 }
 
 // We are in stateIdentifier
-func stateIdentifier(b rune) (*stateFunction, bool) {
+func stateIdentifier(b rune, l *list.List) (*stateFunction, bool) {
 	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
@@ -205,14 +208,14 @@ func stateIdentifier(b rune) (*stateFunction, bool) {
 		newState = &stateOperatorID
 
 	} else {
-		fmt.Println("Error token (stateIdentifier):", fmt.Sprintf("%c", b), "=", b)
+		l.PushBack(createError("Invalid token '"+string(b)+"' (code: "+strconv.Itoa(int(b))+")", lineNum))
 	}
 
 	return newState, newState != &stateIdentifierID
 }
 
 // We are in stateOperator
-func stateOperator(b rune) (*stateFunction, bool) {
+func stateOperator(b rune, l *list.List) (*stateFunction, bool) {
 	newState := &stateWhitespaceID
 
 	if IsWhitespace(b) {
@@ -228,7 +231,7 @@ func stateOperator(b rune) (*stateFunction, bool) {
 		newState = &stateOperatorID
 
 	} else {
-		fmt.Println("Error token (stateOperator):", fmt.Sprintf("%c", b), "=", b)
+		l.PushBack(createError("Invalid token '"+string(b)+"' (code: "+strconv.Itoa(int(b))+")", lineNum))
 	}
 
 	return newState, newState != &stateOperatorID
@@ -238,8 +241,8 @@ func stateOperator(b rune) (*stateFunction, bool) {
 // eg. if we switched from stateInteger -> stateWhitespace, then we just read an integer
 // eg. if we switched from stateIdentifier -> stateWhitespace, it could be either an identifier or a keyword
 // eg. if we switched from stateWhitespace -> stateInteger, we only had white spaces. Ignore those
-func interpretInput(slice string, length int, state *stateFunction, sc *Scanner) {
-	token := Token{tokenID: -1, tokenVal: nil}
+func interpretInput(slice string, length int, state *stateFunction, sc *Scanner, l *list.List, line int) {
+	token := Token{tokenID: -1, tokenVal: nil, lineNum: line}
 
 	switch state {
 	case &stateIdentifierID:
@@ -272,7 +275,7 @@ func interpretInput(slice string, length int, state *stateFunction, sc *Scanner)
 				id := MapOperator(s)
 
 				if id < 0 {
-					fmt.Printf("\"%s\" is not a valid operator.\n", s)
+					l.PushBack(createError("\""+s+"\" is not a valid operator", line))
 				} else {
 					if replace {
 						token = Token{tokenID: id, tokenVal: nil}
@@ -293,7 +296,7 @@ func interpretInput(slice string, length int, state *stateFunction, sc *Scanner)
 			id := MapOperator(s)
 
 			if id < 0 {
-				fmt.Printf("\"%s\" is not a valid operator.\n", s)
+				l.PushBack(createError("\""+s+"\" is not a valid operator", line))
 			} else {
 				if replace {
 					token = Token{tokenID: id, tokenVal: nil}
@@ -314,14 +317,22 @@ func interpretInput(slice string, length int, state *stateFunction, sc *Scanner)
 }
 
 // ScanFile scans file
-func scanFile(sc *Scanner) {
+func scanFile(sc *Scanner) *list.List {
 	dat, err := ioutil.ReadFile(sc.filename)
+	errList := list.New()
 
-	// check if we actually read the file
-	check(err)
+	if err != nil {
+		errList.PushBack(err)
+		return errList
+	}
 
 	// convert file content to string.
 	str := string(dat)
+
+	if len(str) == 0 {
+		errList.PushBack(createError("Empty file", 1))
+		return errList
+	}
 
 	// initialize state IDs with corresponding function
 	stateWhitespaceID = stateWhitespace
@@ -341,6 +352,9 @@ func scanFile(sc *Scanner) {
 		}
 	}
 
+	// lineNum starts at 1
+	lineNum = 1
+
 	// for substrings we always slice it from start to the current index
 	start := 0
 
@@ -358,17 +372,26 @@ func scanFile(sc *Scanner) {
 	var index int
 	var value rune
 
+	// for correct line numbers I need to subtract 1 from lineNum if last token was a linebreak
+	var diff int
+
 	for index, value = range []rune(str) {
-		newState, changed = (*currentState)(value)
+		newState, changed = (*currentState)(value, errList)
 
 		// state didn't change, read next character
 		if !changed {
 			continue
 		}
 
+		if value == '\n' {
+			diff = 1
+		} else {
+			diff = 0
+		}
+
 		// state changed. Interpret our slice
 		slice = str[start:index]
-		interpretInput(slice, index-start, currentState, sc)
+		interpretInput(slice, index-start, currentState, sc, errList, lineNum-diff)
 
 		// start set to current index, the start of our next token
 		start = index
@@ -378,5 +401,10 @@ func scanFile(sc *Scanner) {
 	}
 
 	// loop doesn't get very last operator, so we have to include it here
-	interpretInput(str[start:index+1], index-start+1, currentState, sc)
+	interpretInput(str[start:index+1], index-start+1, currentState, sc, errList, lineNum)
+
+	if errList.Len() != 0 {
+		return errList
+	}
+	return nil
 }
