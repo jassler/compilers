@@ -41,7 +41,7 @@ var mapOfKeywords = map[string]int{
 	"else": TokenElse,
 	"end":  TokenEnd,
 
-	// TokenIf usage: if <expr> then <expr> else <expr>
+	// TokenIf usage: if <expr> then <expr> else <expr> end
 	"if":    TokenIf,
 	"in":    TokenIn,
 	"let":   TokenLet,

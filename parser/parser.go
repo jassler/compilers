@@ -31,9 +31,9 @@ func Parse(scan scanner.Scanner) (*Expression, *list.List) {
 // Creates error message
 func createError(msg string, t *scanner.Token) error {
 	if t == nil {
-		return fmt.Errorf("Semantic error: %s", msg)
+		return fmt.Errorf("Syntax error: %s", msg)
 	}
-	return fmt.Errorf("Semantic error in line %d: %s", t.GetLineNumber(), msg)
+	return fmt.Errorf("Syntax error in line %d: %s", t.GetLineNumber(), msg)
 }
 
 // checkNextID checks, if the next token coincides with what's expected. Returns nil if that's the case, else return an error
@@ -97,8 +97,8 @@ func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
 }
 
 // parseIf tries to turn tokens into valid if expression.
-// Semantic: if <expr> then <expr> else <expr>
-// If semantic rule's not met, push error into our list
+// Syntax: if <expr> then <expr> else <expr>
+// If syntax rule's not met, push error into our list
 func parseIf(scan *scanner.Scanner, list *list.List) ExprIf {
 	var e ExprIf
 

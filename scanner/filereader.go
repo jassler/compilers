@@ -383,10 +383,9 @@ func scanFile(sc *Scanner) *list.List {
 			continue
 		}
 
+		diff = 0
 		if value == '\n' {
 			diff = 1
-		} else {
-			diff = 0
 		}
 
 		// state changed. Interpret our slice
