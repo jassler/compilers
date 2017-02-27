@@ -9,6 +9,15 @@ type ExprIf struct {
 	alternative Expression
 }
 
+// Execute executes consequent condition, if condition.Execute() != 0, else execute alternative
+func (i ExprIf) Execute() int64 {
+	if i.condition.Execute() != 0 {
+		return i.consequent.Execute()
+	}
+
+	return i.alternative.Execute()
+}
+
 // PrintExpr prints "if", then the expressions seperately
 func (i ExprIf) PrintExpr(indent int) {
 	printIndent(indent)
@@ -19,16 +28,16 @@ func (i ExprIf) PrintExpr(indent int) {
 }
 
 // GetCondition returns condition of if expression
-func (i ExprIf) GetCondition() *Expression {
-	return &i.condition
+func (i *ExprIf) GetCondition() Expression {
+	return i.condition
 }
 
 // GetConsequent returns consequent of if expression
-func (i ExprIf) GetConsequent() *Expression {
-	return &i.consequent
+func (i *ExprIf) GetConsequent() Expression {
+	return i.consequent
 }
 
 // GetAlternative returns alternative of if expression
-func (i ExprIf) GetAlternative() *Expression {
-	return &i.alternative
+func (i *ExprIf) GetAlternative() Expression {
+	return i.alternative
 }

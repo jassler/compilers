@@ -7,6 +7,11 @@ type ExprInteger struct {
 	i int64
 }
 
+// Execute returns i value
+func (i ExprInteger) Execute() int64 {
+	return i.i
+}
+
 // PrintExpr prints out the number from the struct
 func (i ExprInteger) PrintExpr(indent int) {
 	printIndent(indent)

@@ -8,14 +8,14 @@ import (
 )
 
 // ParseFile parses file from given file
-func ParseFile(path string) (*Expression, *list.List) {
+func ParseFile(path string) (Expression, *list.List) {
 	scan, _ := scanner.NewScanner(path)
 
 	return Parse(scan)
 }
 
 // Parse parses scanned file
-func Parse(scan scanner.Scanner) (*Expression, *list.List) {
+func Parse(scan scanner.Scanner) (Expression, *list.List) {
 	var e Expression
 	err := list.New()
 
@@ -25,7 +25,7 @@ func Parse(scan scanner.Scanner) (*Expression, *list.List) {
 		err = nil
 	}
 
-	return &e, err
+	return e, err
 }
 
 // Creates error message
@@ -82,11 +82,22 @@ func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
 
 	// based on the token ID, convert expression into integer, if-statement, ...
 	switch t.GetID() {
+
+	/* Integer */
 	case scanner.TokenInteger:
 		e = ExprInteger{i: int64(t.GetValue().(int))}
 
+	/* if */
 	case scanner.TokenIf:
 		e = parseIf(scan, list)
+
+	/* unary operator ('!', '-') */
+	case scanner.TokenNegate, scanner.TokenNot:
+		e = ExprOperatorUnary{op: t.GetID(), expr: parseExpression(scan, list)}
+
+	/* binary operator "(+, *, &&, ||, ==, <)" */
+	case scanner.TokenOpenParen:
+		e = parseBinaryOp(scan, list)
 
 	default:
 		list.PushBack(createError("Unexpected token: "+scanner.GetStringFromTokenID(t.GetID()), t))
@@ -131,9 +142,42 @@ func parseIf(scan *scanner.Scanner, list *list.List) ExprIf {
 	}
 
 	// Expected token: end
-	if !checkNextToken(scan, scanner.TokenEnd, list) {
+	checkNextToken(scan, scanner.TokenEnd, list)
+
+	return e
+}
+
+// Binary operator in the syntax: (a op b)
+// op = "&&" , "||" , "<" , "==" , "+" , "*"
+func parseBinaryOp(scan *scanner.Scanner, list *list.List) ExprOperatorBinary {
+	var e ExprOperatorBinary
+
+	// a is another expression
+	e.e1 = parseExpression(scan, list)
+	if e.e1 == nil {
 		return e
 	}
+
+	// Expected token: Operator
+	t, succ := scan.NextToken()
+
+	if !succ {
+		list.PushBack(createError("Unexpected ending. Expected an operator followed by an operand and a closing bracket", t))
+		return e
+	}
+
+	if err := e.setOperator(t.GetID()); err != nil {
+		list.PushBack(createError(err.Error(), t))
+	}
+
+	// b is another expression
+	e.e2 = parseExpression(scan, list)
+	if e.e2 == nil {
+		return e
+	}
+
+	// Expected token: Closing parantheses ')'
+	checkNextToken(scan, scanner.TokenCloseParen, list)
 
 	return e
 }
