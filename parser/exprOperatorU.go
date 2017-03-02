@@ -19,7 +19,10 @@ func (e ExprOperatorUnary) Execute() int64 {
 	}
 
 	if e.op == scanner.TokenNot {
-		return e.expr.Execute() ^ 1
+		if e.expr.Execute() == 0 {
+			return 1
+		}
+		return 0
 	}
 
 	return e.expr.Execute()

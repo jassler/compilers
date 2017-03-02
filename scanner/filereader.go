@@ -3,7 +3,6 @@ package scanner
 import (
 	"container/list"
 	"fmt"
-	"io/ioutil"
 	"strconv"
 	"unicode/utf8"
 )
@@ -316,18 +315,8 @@ func interpretInput(slice string, length int, state *stateFunction, sc *Scanner,
 	}
 }
 
-// ScanFile scans file
-func scanFile(sc *Scanner) *list.List {
-	dat, err := ioutil.ReadFile(sc.filename)
+func scanString(str string, sc *Scanner) *list.List {
 	errList := list.New()
-
-	if err != nil {
-		errList.PushBack(err)
-		return errList
-	}
-
-	// convert file content to string.
-	str := string(dat)
 
 	if len(str) == 0 {
 		errList.PushBack(createError("Empty file", 1))

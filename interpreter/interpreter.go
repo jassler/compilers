@@ -1,16 +1,20 @@
 package interpreter
 
-import (
-	"fmt"
-
-	"github.com/compilers/parser"
-)
+import "github.com/compilers/parser"
+import "github.com/compilers/scanner"
 
 // Interpret interprets program from given expression
-func Interpret(expr parser.Expression) {
+func Interpret(expr parser.Expression) int64 {
 
-	res := interpretExpression(expr)
-	fmt.Println(res)
+	return interpretExpression(expr)
+
+}
+
+func InterpretString(source string) int64 {
+
+	scan, _ := scanner.NewScannerFromString("", source)
+	expr, _ := parser.Parse(scan)
+	return interpretExpression(expr)
 
 }
 

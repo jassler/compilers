@@ -58,7 +58,7 @@ func main() {
 			continue
 		}
 
-		interpreter.Interpret(expr)
+		fmt.Println(interpreter.Interpret(expr))
 	}
 
 }

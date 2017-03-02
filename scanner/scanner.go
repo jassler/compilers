@@ -1,7 +1,10 @@
 package scanner
 
-import "fmt"
-import "container/list"
+import (
+	"container/list"
+	"fmt"
+	"io/ioutil"
+)
 
 // Scanner contains all scanned tokens and the current index it's on
 type Scanner struct {
@@ -13,6 +16,19 @@ type Scanner struct {
 
 // NewScanner reads file and returns scanner
 func NewScanner(path string) (Scanner, *list.List) {
+
+	dat, err := ioutil.ReadFile(path)
+	errList := list.New()
+
+	if err != nil {
+		errList.PushBack(err)
+		return Scanner{}, errList
+	}
+
+	return NewScannerFromString(path, string(dat))
+}
+
+func NewScannerFromString(path string, source string) (Scanner, *list.List) {
 	s := Scanner{
 		filename:      path,
 		scannedTokens: []Token{},
@@ -20,7 +36,7 @@ func NewScanner(path string) (Scanner, *list.List) {
 		index:         0,
 	}
 
-	err := scanFile(&s)
+	err := scanString(source, &s)
 	s.length = len(s.scannedTokens)
 
 	return s, err
