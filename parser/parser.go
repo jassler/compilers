@@ -91,6 +91,10 @@ func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
 	case scanner.TokenIf:
 		e = parseIf(scan, list)
 
+	/* let */
+	case scanner.TokenLet:
+		e = parseLet(scan, list)
+
 	/* unary operator ('!', '-') */
 	case scanner.TokenNegate, scanner.TokenNot:
 		e = ExprOperatorUnary{op: t.GetID(), expr: parseExpression(scan, list)}
@@ -110,35 +114,35 @@ func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
 // parseIf tries to turn tokens into valid if expression.
 // Syntax: if <expr> then <expr> else <expr>
 // If syntax rule's not met, push error into our list
-func parseIf(scan *scanner.Scanner, list *list.List) ExprIf {
+func parseIf(scan *scanner.Scanner, list *list.List) Expression {
 	var e ExprIf
 
 	// condition comes from an expression
 	e.condition = parseExpression(scan, list)
 	if e.condition == nil {
-		return e
+		return nil
 	}
 
 	// Expected token: then
 	if !checkNextToken(scan, scanner.TokenThen, list) {
-		return e
+		return nil
 	}
 
 	// consequent comes from an expression
 	e.consequent = parseExpression(scan, list)
 	if e.consequent == nil {
-		return e
+		return nil
 	}
 
 	// Expected token: else
 	if !checkNextToken(scan, scanner.TokenElse, list) {
-		return e
+		return nil
 	}
 
 	// alternative comes from an expression
 	e.alternative = parseExpression(scan, list)
 	if e.alternative == nil {
-		return e
+		return nil
 	}
 
 	// Expected token: end
@@ -147,15 +151,74 @@ func parseIf(scan *scanner.Scanner, list *list.List) ExprIf {
 	return e
 }
 
+func parseLet(scan *scanner.Scanner, list *list.List) Expression {
+	var e = ExprLet{bindings: []Binding{}}
+
+	// continue reading until token "in" comes up.
+	// identifiers are connected with "and" token.
+	for {
+		// Expected token: identifier
+		t, succ := scan.NextToken()
+
+		if !succ {
+			return nil
+		}
+
+		if t.GetID() != scanner.TokenIdentifier {
+			list.PushBack(createError("Expected identifier after let.", t))
+			return nil
+		}
+
+		b := Binding{ident: t.GetValue().(string)}
+
+		// Expected token: =
+		if !checkNextToken(scan, scanner.TokenEquals, list) {
+			return nil
+		}
+
+		// Expeced token: expression
+		if expr := parseExpression(scan, list); expr != nil {
+			b.expr = &expr
+		} else {
+			return nil
+		}
+
+		// Expected token: "and" (continue) or "in" (break)
+		t, succ = scan.NextToken()
+
+		if !succ {
+			return nil
+		}
+
+		if t.GetID() == scanner.TokenAnd {
+			continue
+		}
+
+		if !checkNextToken(scan, scanner.TokenIn) {
+			return nil
+		}
+
+		break
+	}
+
+	// Expected token: expression
+	e.expr = parseExpression(scan, list)
+
+	if e.expr == nil {
+		return nil
+	}
+
+}
+
 // Binary operator in the syntax: (a op b)
 // op = "&&" , "||" , "<" , "==" , "+" , "*"
-func parseBinaryOp(scan *scanner.Scanner, list *list.List) ExprOperatorBinary {
+func parseBinaryOp(scan *scanner.Scanner, list *list.List) Expression {
 	var e ExprOperatorBinary
 
 	// a is another expression
 	e.e1 = parseExpression(scan, list)
 	if e.e1 == nil {
-		return e
+		return nil
 	}
 
 	// Expected token: Operator
@@ -163,7 +226,7 @@ func parseBinaryOp(scan *scanner.Scanner, list *list.List) ExprOperatorBinary {
 
 	if !succ {
 		list.PushBack(createError("Unexpected ending. Expected an operator followed by an operand and a closing bracket", t))
-		return e
+		return nil
 	}
 
 	if err := e.setOperator(t.GetID()); err != nil {
@@ -173,7 +236,7 @@ func parseBinaryOp(scan *scanner.Scanner, list *list.List) ExprOperatorBinary {
 	// b is another expression
 	e.e2 = parseExpression(scan, list)
 	if e.e2 == nil {
-		return e
+		return nil
 	}
 
 	// Expected token: Closing parantheses ')'
