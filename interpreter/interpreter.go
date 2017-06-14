@@ -9,6 +9,7 @@ import (
 	"github.com/simplang/token"
 )
 
+// public map of functions with their names
 var functions map[string]*ast.Function
 
 func Interprete(expression ast.Expression, params []int64) int64 {
@@ -23,8 +24,7 @@ func Interprete(expression ast.Expression, params []int64) int64 {
 
 	for _, f := range prog.Functions {
 		if _, ok := functions[f.Name.Name]; ok {
-			fmt.Printf("Error: Function '%s' is already defined (line %d.%d)\n", f.Name.Name, f.Token.Line, f.Token.Column)
-			return 0
+			throwError(fmt.Sprintf("Error: Function '%s' is already defined", f.Name.Name), &f.Token)
 		}
 		functions[f.Name.Name] = f
 	}
@@ -32,8 +32,7 @@ func Interprete(expression ast.Expression, params []int64) int64 {
 	val, ok := functions["main"]
 
 	if !ok {
-		fmt.Println("Error: Function 'main' could not be found")
-		return 0
+		throwError("Error: Function 'main' could not be found", nil)
 	}
 
 	return interpreteFunction(val, params)
@@ -42,8 +41,7 @@ func Interprete(expression ast.Expression, params []int64) int64 {
 func interpreteFunction(f *ast.Function, params []int64) int64 {
 	l := len(params)
 	if l != len(f.Params) {
-		fmt.Printf("Error: Function called with wrong amount of arguments. expected=%d, got=%d (line %d.%d)\n", len(f.Params), l, f.Token.Line, f.Token.Column)
-		return 0
+		throwError(fmt.Sprintf("Error: Function called with wrong amount of arguments. expected=%d, got=%d", len(f.Params), l), &f.Token)
 	}
 
 	env := &environment{elements: make([]*element, l)}
@@ -54,13 +52,15 @@ func interpreteFunction(f *ast.Function, params []int64) int64 {
 	res, isRec := interpreteExpr(f.Body, env)
 
 	if isRec != nil {
-		fmt.Printf("Error: recur appeared after function %s ended. Is a loop missing? (line %d.%d)", f.Name.Name, f.Token.Line, f.Token.Column)
+		throwError(fmt.Sprintf("Error: recur appeared after function %s ended. Is a loop missing?", f.Name.Name), &f.Token)
 	}
 
 	return res
 }
 
-// bool tells us if we're jumping "out" of a recursion
+// functions return tuples
+// int64 is the result we get
+// []int64 are the argument values when recur is called
 func interpreteExpr(expr ast.Expression, env *environment) (int64, []int64) {
 	var res int64
 	var rec []int64

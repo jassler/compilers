@@ -80,13 +80,3 @@ func (e *environment) appendElement(el *element) {
 func (e *environment) removeElements(am int) {
 	e.elements = e.elements[:len(e.elements)-am]
 }
-
-func (e *environment) subArray(am int) []int64 {
-	res := make([]int64, am)
-
-	for index, val := range e.elements[len(e.elements)-am-1:] {
-		res[index] = val.value
-	}
-
-	return res
-}
