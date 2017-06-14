@@ -1,59 +1,262 @@
 package interpreter
 
-import "github.com/compilers/parser"
-import "github.com/compilers/scanner"
+import (
+	"fmt"
 
-// Interpret interprets program from given expression
-func Interpret(expr parser.Expression) int64 {
+	"reflect"
 
-	return interpretExpression(expr)
+	"github.com/simplang/ast"
+	"github.com/simplang/token"
+)
 
+var functions map[string]*ast.Function
+
+func Interprete(expression ast.Expression, params []int64) int64 {
+	prog, ok := expression.(*ast.Program)
+
+	if !ok {
+		fmt.Println("Error: Expression is not a program")
+		return 0
+	}
+
+	functions = map[string]*ast.Function{}
+
+	for _, f := range prog.Functions {
+		if _, ok := functions[f.Name.Name]; ok {
+			fmt.Printf("Error: Function '%s' is already defined (line %d.%d)\n", f.Name.Name, f.Token.Line, f.Token.Column)
+			return 0
+		}
+		functions[f.Name.Name] = f
+	}
+
+	val, ok := functions["main"]
+
+	if !ok {
+		fmt.Println("Error: Function 'main' could not be found")
+		return 0
+	}
+
+	return interpreteFunction(val, params)
 }
 
-func InterpretString(source string) int64 {
+func interpreteFunction(f *ast.Function, params []int64) int64 {
+	l := len(params)
+	if l != len(f.Params) {
+		fmt.Printf("Error: Function called with wrong amount of arguments. expected=%d, got=%d (line %d.%d)\n", len(f.Params), l, f.Token.Line, f.Token.Column)
+		return 0
+	}
 
-	scan, _ := scanner.NewScannerFromString("", source)
-	expr, _ := parser.Parse(scan)
-	return interpretExpression(expr)
+	env := &environment{elements: make([]*element, l)}
+	for i, val := range f.Params {
+		env.elements[i] = &element{name: val.Name, value: params[i]}
+	}
 
+	res, isRec := interpreteExpr(f.Body, env)
+
+	if isRec != nil {
+		fmt.Printf("Error: recur appeared after function %s ended. Is a loop missing? (line %d.%d)", f.Name.Name, f.Token.Line, f.Token.Column)
+	}
+
+	return res
 }
 
-func interpretExpression(expr parser.Expression) int64 {
-	return expr.Execute()
-}
+// bool tells us if we're jumping "out" of a recursion
+func interpreteExpr(expr ast.Expression, env *environment) (int64, []int64) {
+	var res int64
+	var rec []int64
 
-/*
-So, instead of type-checking every single expression to
-figure out what they should do, why shouldn't each expression
-know by itself, what needs to be done?
+	switch t := expr.(type) {
+	case *ast.Integer:
+		res = (*ast.Integer)(t).Value
 
--> Interpreting functionality for now implemented with each expression.
+	case *ast.IfExpression:
+		res, rec = interpreteIf(t, env)
 
+	case *ast.UnaryExpression:
+		res, rec = interpreteUnop(t, env)
 
-// interpretExpression evaluates the type of Expression we have.
-// Possible types of expression:
-// - ExprInteger: Return int value of Expression
-// - ExprIf:      Call interpretIf function that further evaluates the result of our given expression
-func interpretExpression(expr parser.Expression) int64 {
-	switch expr.(type) {
-	case parser.ExprInteger:
-		return expr.(parser.ExprInteger).GetInteger()
+	case *ast.BinaryExpression:
+		res, rec = interpreteBinop(t, env)
 
-	case parser.ExprIf:
-		exprIf := expr.(parser.ExprIf)
-		return interpretIf(&exprIf)
+	case *ast.LetExpression:
+		res, rec = interpreteLet(t, env)
+
+	case *ast.Ident:
+		res = env.getValue(&(*ast.Ident)(t).Token)
+
+	case *ast.FunctionCall:
+		fc := (*ast.FunctionCall)(t)
+		f, ok := functions[fc.Name]
+		if !ok {
+			throwError(fmt.Sprintf("function '%s' is not defined", fc.Name), &fc.Token)
+			break
+		}
+
+		res = interpreteFunction(f, evalArgs(fc.Params, &fc.Token, env))
+
+	case *ast.LoopExpression:
+		res, rec = interpreteLoop(t, env)
+
+	case *ast.Recur:
+		rec = evalArgs(t.Args, &t.Token, env)
 
 	default:
-		panic("No valid expression received")
+		throwError(fmt.Sprintf("type is not valid in expression. got=%s", reflect.TypeOf(expr)), nil)
+	}
+
+	return res, rec
+}
+
+func evalArgs(expr []ast.Expression, t *token.Token, env *environment) []int64 {
+	res := make([]int64, len(expr))
+	var isRec []int64
+
+	for i, val := range expr {
+		res[i], isRec = interpreteExpr(val, env)
+
+		if isRec != nil {
+			throwError("recur may not appear inside an argument. Is a loop missing?", t)
+		}
+	}
+
+	return res
+}
+
+func interpreteIf(expr *ast.IfExpression, env *environment) (int64, []int64) {
+	res, isRec := interpreteExpr(expr.Condition, env)
+
+	if isRec != nil {
+		throwError("recur statement may not appear as a condition in an if statement. Is a loop missing?", &expr.Token)
+	}
+
+	if res != 0 {
+		res, isRec = interpreteExpr(expr.Consequence, env)
+		return res, isRec
+	}
+
+	res, isRec = interpreteExpr(expr.Alternative, env)
+	return res, isRec
+}
+
+func interpreteUnop(expr *ast.UnaryExpression, env *environment) (int64, []int64) {
+	res, isRec := interpreteExpr(expr.Operand, env)
+
+	if isRec != nil {
+		throwError("recur may not be used in connection with a unary operator. Is a loop missing?", &expr.Token)
+	}
+
+	switch expr.Operator {
+	case token.NOT:
+		if res != 0 {
+			return 0, nil
+		}
+		return 1, nil
+
+	case token.MINUS:
+		return -res, nil
+
+	default:
+		throwError(fmt.Sprintf("invalid unary operator. Expected ! or -, got %s instead", expr.Operator), &expr.Token)
+		return 0, nil
 	}
 }
 
+func interpreteBinop(expr *ast.BinaryExpression, env *environment) (int64, []int64) {
+	l, isRecl := interpreteExpr(expr.Left, env)
+	r, isRecr := interpreteExpr(expr.Right, env)
 
-// interpretIf checks, if condition is not 0. If that's the case, we return the int value of our consequent, else the alternative.
-func interpretIf(expr *parser.ExprIf) int64 {
-	if interpretExpression(expr.GetCondition()) != 0 {
-		return interpretExpression(expr.GetConsequent())
+	if (isRecl != nil) || (isRecr != nil) {
+		throwError("recur may not be used with a binary operator. Is a loop missing?", &expr.Token)
 	}
-	return interpretExpression(expr.GetAlternative())
+
+	switch expr.Operator {
+	case token.LOG_AND:
+		if l == 0 {
+			return 0, nil
+		}
+		if r == 0 {
+			return 0, nil
+		}
+		return 1, nil
+
+	case token.LOG_OR:
+		if l != 0 {
+			return 1, nil
+		}
+		if r != 0 {
+			return 1, nil
+		}
+		return 0, nil
+
+	case token.LESS:
+		if l < r {
+			return 1, nil
+		}
+		return 0, nil
+
+	case token.EQUAL:
+		if l == r {
+			return 1, nil
+		}
+		return 0, nil
+
+	case token.PLUS:
+		return l + r, nil
+
+	case token.TIMES:
+		return l * r, nil
+
+	default:
+		throwError(fmt.Sprintf("invalid binary operator. Expected &&, ||, <, ==, + or -, got %s instead", expr.Operator), &expr.Token)
+		return 0, nil
+	}
 }
-*/
+
+func interpreteLet(expr *ast.LetExpression, env *environment) (int64, []int64) {
+	var res int64
+	var isRec []int64
+
+	for _, b := range expr.Bindings {
+		res, isRec = interpreteExpr(b.Expr, env)
+
+		if isRec != nil {
+			throwError("recur may not appear as an argument. Is a loop missing?", &expr.Token)
+		}
+		env.appendElement(&element{name: b.Ident.Name, value: res})
+	}
+
+	res, isRec = interpreteExpr(expr.Expr, env)
+	env.removeElements(len(expr.Bindings))
+
+	return res, isRec
+}
+
+func interpreteLoop(expr *ast.LoopExpression, env *environment) (int64, []int64) {
+	var res int64
+	var isRec []int64
+
+	for _, b := range expr.Bindings {
+		res, isRec = interpreteExpr(b.Expr, env)
+
+		if isRec != nil {
+			throwError("recur may not appear as an argument. Is a loop missing?", &expr.Token)
+		}
+
+		env.appendElement(&element{name: b.Ident.Name, value: res})
+	}
+
+	for res, isRec = interpreteExpr(expr.Expr, env); isRec != nil; res, isRec = interpreteExpr(expr.Expr, env) {
+		if len(isRec) != len(expr.Bindings) {
+			throwError(fmt.Sprintf("recur has wrong amount of arguments. expected=%d, got=%d", len(expr.Bindings), len(isRec)), &expr.Token)
+		}
+
+		beg := len(env.elements) - len(expr.Bindings)
+		for i, val := range isRec {
+			env.elements[beg+i].value = val
+		}
+	}
+
+	env.removeElements(len(expr.Bindings))
+
+	return res, nil
+}

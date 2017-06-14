@@ -1,5 +1,0 @@
-let ammm = 1 and
-    loopy = a +-* 135
-in
-    loopy
-end

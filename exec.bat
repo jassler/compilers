@@ -1,1 +1,0 @@
-go install .\scanner\ .\parser\ .\interpreter\ .\assignment_1\

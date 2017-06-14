@@ -1,246 +1,357 @@
 package parser
 
 import (
-	"container/list"
 	"fmt"
+	"strconv"
 
-	"github.com/compilers/scanner"
+	"github.com/simplang/ast"
+	"github.com/simplang/lexer"
+	"github.com/simplang/token"
 )
 
-// ParseFile parses file from given file
-func ParseFile(path string) (Expression, *list.List) {
-	scan, _ := scanner.NewScanner(path)
+type Parser struct {
+	l *lexer.Lexer
 
-	return Parse(scan)
+	curToken  token.Token
+	peekToken token.Token
+	errors    []string
 }
 
-// Parse parses scanned file
-func Parse(scan scanner.Scanner) (Expression, *list.List) {
-	var e Expression
-	err := list.New()
+func New(l *lexer.Lexer) *Parser {
+	p := &Parser{l: l, errors: []string{}}
 
-	e = parseExpression(&scan, err)
+	// read two tokens so curToken and peekToken is set
+	p.nextToken()
+	p.nextToken()
 
-	if err.Len() == 0 {
-		err = nil
-	}
-
-	return e, err
+	return p
 }
 
-// Creates error message
-func createError(msg string, t *scanner.Token) error {
-	if t == nil {
-		return fmt.Errorf("Syntax error: %s", msg)
+func (p *Parser) ParseProgram() *ast.Program {
+	program := &ast.Program{Token: p.curToken}
+
+	if p.curToken.Type != token.LET {
+		p.errors = append(p.errors, fmt.Sprintf("function has to start with 'let' (line %d.%d)", p.curToken.Line, p.curToken.Column))
+		return nil
 	}
-	return fmt.Errorf("Syntax error in line %d: %s", t.GetLineNumber(), msg)
+
+	program.Functions = []*ast.Function{p.parseFunction()}
+
+	for !p.peekTokenIs(token.EOF) {
+		if !p.expectPeek(token.LET) {
+			return nil
+		}
+
+		program.Functions = append(program.Functions, p.parseFunction())
+	}
+
+	return program
 }
 
-// checkNextID checks, if the next token coincides with what's expected. Returns nil if that's the case, else return an error
-func checkNextID(got int, expected int, t *scanner.Token) error {
-	if got != expected {
-		// We did not ge what was expeced. Return an error that explains what token we expected
-		return createError("Unexpected token. Expected: "+scanner.GetStringFromTokenID(expected)+", Received: "+scanner.GetStringFromTokenID(got), t)
+func (p *Parser) Errors() []string {
+	return p.errors
+}
+
+func (p *Parser) peekError(t token.TokenType) {
+	msg := fmt.Sprintf("expected next token to be %s, got %s instead (line %d.%d)", t, p.peekToken.Type, p.peekToken.Line, p.peekToken.Column)
+	p.errors = append(p.errors, msg)
+}
+
+func (p *Parser) expectPeek(t token.TokenType) bool {
+	if p.peekTokenIs(t) {
+		p.nextToken()
+		return true
 	}
-	// Valid token, don't return an error
+
+	p.peekError(t)
+	return false
+}
+
+func (p *Parser) peekTokenIs(t token.TokenType) bool {
+	return p.peekToken.Type == t
+}
+
+func (p *Parser) nextToken() {
+	p.curToken = p.peekToken
+	var err error
+	p.peekToken, err = p.l.NextToken()
+
+	if err != nil {
+		p.errors = append(p.errors, err.Error())
+	}
+}
+
+func (p *Parser) parseFunction() *ast.Function {
+	f := &ast.Function{Token: p.curToken}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+
+	f.Name = &ast.Ident{Token: p.curToken, Name: p.curToken.Literal}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+
+	f.Params = []*ast.Ident{&ast.Ident{Token: p.curToken, Name: p.curToken.Literal}}
+
+	for p.peekTokenIs(token.IDENT) {
+		p.nextToken()
+		f.Params = append(f.Params, &ast.Ident{Token: p.curToken, Name: p.curToken.Literal})
+	}
+
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+
+	p.nextToken()
+	f.Body = p.parseExpression()
+
+	if !p.expectPeek(token.END) {
+		return nil
+	}
+
+	return f
+}
+
+// if precedence is not set, we know we're not inside a binary expression
+func (p *Parser) parseExpression(precedence ...int) ast.Expression {
+	var expr ast.Expression
+
+	switch p.curToken.Type {
+	case token.INT:
+		expr = p.parseInteger()
+
+	case token.IF:
+		expr = p.parseIf()
+
+	case token.NOT, token.MINUS:
+		expr = p.parseUnary()
+
+	case token.LPAREN:
+		expr = p.parseLParen()
+
+	case token.LET, token.LOOP:
+		expr = p.parseLet()
+
+	case token.IDENT:
+		if p.peekTokenIs(token.LPAREN) {
+			expr = p.parseFunctionCall()
+		} else {
+			expr = &ast.Ident{Token: p.curToken, Name: p.curToken.Literal}
+		}
+
+	case token.RECUR:
+		expr = p.parseRecur()
+
+	default:
+		p.errors = append(p.errors, fmt.Sprintf("parser encountered an unexpected token type: %s (line %d.%d)", p.curToken.Type, p.curToken.Line, p.curToken.Column))
+		return nil
+	}
+
+	if token.IsBinaryOperator(p.peekToken.Type) {
+
+		// if we don't have a precedence set as a parameter, then we're at the top of the "calculation tree"
+		// from there we need to continue eating all the operators until we're at the end
+		if len(precedence) == 0 {
+			for token.IsBinaryOperator(p.peekToken.Type) {
+				p.nextToken()
+				expr = p.parseBinaryOperator(expr)
+			}
+		} else if token.GetPrecedence(p.peekToken.Type) > precedence[0] {
+			p.nextToken()
+			expr = p.parseBinaryOperator(expr)
+		}
+	}
+
+	return expr
+}
+
+// expr = integer
+func (p *Parser) parseInteger() *ast.Integer {
+	i := &ast.Integer{Token: p.curToken}
+	val, err := strconv.ParseInt(p.curToken.Literal, 10, 64)
+
+	if err != nil {
+		p.errors = append(p.errors, fmt.Sprintf("Parser could not convert string to int. Value=%s, Error message=%s (line %d.%d)", p.curToken.Literal, err.Error(), p.curToken.Line, p.curToken.Column))
+		return nil
+	}
+
+	i.Value = val
+	return i
+}
+
+// expr = "if" expr "then" expr "else" expr "end"
+func (p *Parser) parseIf() *ast.IfExpression {
+	ifexpr := &ast.IfExpression{Token: p.curToken}
+
+	p.nextToken()
+	ifexpr.Condition = p.parseExpression()
+
+	if !p.expectPeek(token.THEN) {
+		return nil
+	}
+
+	p.nextToken()
+	ifexpr.Consequence = p.parseExpression()
+
+	if !p.expectPeek(token.ELSE) {
+		return nil
+	}
+
+	p.nextToken()
+	ifexpr.Alternative = p.parseExpression()
+
+	if !p.expectPeek(token.END) {
+		return nil
+	}
+
+	return ifexpr
+}
+
+// expr = unop expr
+// unop = "!" | "-"
+func (p *Parser) parseUnary() *ast.UnaryExpression {
+	unexpr := &ast.UnaryExpression{Token: p.curToken}
+
+	unexpr.Operator = p.curToken.Type
+	p.nextToken()
+
+	unexpr.Operand = p.parseExpression()
+
+	return unexpr
+}
+
+// expr = "(" expr binop expr ")"
+// binop = "&&" | "||" | "<" | "==" | "+" | "*"
+func (p *Parser) parseBinaryOperator(left ast.Expression) *ast.BinaryExpression {
+	biexpr := &ast.BinaryExpression{Token: p.curToken, Operator: p.curToken.Type, Left: left}
+
+	// expect binary op
+	if !token.IsBinaryOperator(p.curToken.Type) {
+		p.errors = append(p.errors, fmt.Sprintf("expected token to be a binary operator (+ * && || == <), instead got=%s (line %d.%d)", p.curToken.Type, p.curToken.Line, p.curToken.Column))
+		return nil
+	}
+
+	precedence := token.GetPrecedence(p.curToken.Type)
+
+	p.nextToken()
+	biexpr.Right = p.parseExpression(precedence)
+
+	if token.IsBinaryOperator(p.curToken.Type) && token.GetPrecedence(p.curToken.Type) > precedence {
+		biexpr = p.parseBinaryOperator(biexpr)
+	}
+
+	return biexpr
+}
+
+func (p *Parser) parseLParen() ast.Expression {
+	p.nextToken()
+
+	if p.curToken.Type == token.RPAREN {
+		p.errors = append(p.errors, fmt.Sprintf("an empty set of parentheses is not valid (line %d.%d)", p.curToken.Line, p.curToken.Column))
+		return nil
+	}
+
+	e := p.parseExpression()
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+
+	return e
+}
+
+func (p *Parser) parseFunctionCall() *ast.FunctionCall {
+	fc := &ast.FunctionCall{Token: p.curToken, Name: p.curToken.Literal}
+
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+
+	fc.Params = []ast.Expression{p.parseLParen()}
+
+	for p.peekTokenIs(token.LPAREN) {
+		p.nextToken()
+		fc.Params = append(fc.Params, p.parseLParen())
+	}
+
+	return fc
+}
+
+// parses let AND loop
+func (p *Parser) parseLet() ast.Expression {
+	t := p.curToken
+
+	if t.Type != token.LET && t.Type != token.LOOP {
+		p.errors = append(p.errors, fmt.Sprintf("Internal error. Called parseLet() with wrong token (%v)\n", t))
+		return nil
+	}
+
+	bind := []*ast.Binding{}
+
+	bind = append(bind, p.parseBinding())
+	for p.peekToken.Type == token.AND {
+		p.nextToken()
+		bind = append(bind, p.parseBinding())
+	}
+
+	if !p.expectPeek(token.IN) {
+		return nil
+	}
+	p.nextToken()
+	e := p.parseExpression()
+
+	p.expectPeek(token.END)
+
+	if t.Type == token.LET {
+		return &ast.LetExpression{Token: t, Bindings: bind, Expr: e}
+	}
+	if t.Type == token.LOOP {
+		return &ast.LoopExpression{Token: t, Bindings: bind, Expr: e}
+	}
 	return nil
 }
 
-// checkNextToken checks, if next token fullfills expectation. Returns true if that's the case
-func checkNextToken(scan *scanner.Scanner, expected int, list *list.List) bool {
+// ident "=" expr
+func (p *Parser) parseBinding() *ast.Binding {
+	b := &ast.Binding{Token: p.curToken}
 
-	t, succ := scan.NextToken()
-
-	// End of file reached
-	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected token: "+scanner.GetStringFromTokenID(expected), t))
-		return false
+	if !p.expectPeek(token.IDENT) {
+		return nil
 	}
 
-	// Expected token
-	err := checkNextID(t.GetID(), expected, t)
+	b.Ident = &ast.Ident{Token: p.curToken, Name: p.curToken.Literal}
 
-	if err != nil {
-		list.PushBack(err)
-		return false
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
 	}
 
-	return true
+	p.nextToken()
+	b.Expr = p.parseExpression()
+	return b
 }
 
-// parseExpression turns tokens into an expression
-func parseExpression(scan *scanner.Scanner, list *list.List) Expression {
-	var e Expression
+// "recur" arg {arg}
+func (p *Parser) parseRecur() *ast.Recur {
+	rec := &ast.Recur{Token: p.curToken, Args: []ast.Expression{}}
 
-	t, succ := scan.NextToken()
-
-	// if not successful, then we have reached the end of our token array
-	if !succ {
-		list.PushBack(createError("Unexpeced ending", t))
-		return nil
-	}
-
-	// based on the token ID, convert expression into integer, if-statement, ...
-	switch t.GetID() {
-
-	/* Integer */
-	case scanner.TokenInteger:
-		e = ExprInteger{i: int64(t.GetValue().(int))}
-
-	/* if */
-	case scanner.TokenIf:
-		e = parseIf(scan, list)
-
-	/* let */
-	case scanner.TokenLet:
-		e = parseLet(scan, list)
-
-	/* unary operator ('!', '-') */
-	case scanner.TokenNegate, scanner.TokenNot:
-		e = ExprOperatorUnary{op: t.GetID(), expr: parseExpression(scan, list)}
-
-	/* binary operator "(+, *, &&, ||, ==, <)" */
-	case scanner.TokenOpenParen:
-		e = parseBinaryOp(scan, list)
-
-	default:
-		list.PushBack(createError("Unexpected token: "+scanner.GetStringFromTokenID(t.GetID()), t))
-		return nil
-	}
-
-	return e
-}
-
-// parseIf tries to turn tokens into valid if expression.
-// Syntax: if <expr> then <expr> else <expr>
-// If syntax rule's not met, push error into our list
-func parseIf(scan *scanner.Scanner, list *list.List) Expression {
-	var e ExprIf
-
-	// condition comes from an expression
-	e.condition = parseExpression(scan, list)
-	if e.condition == nil {
-		return nil
-	}
-
-	// Expected token: then
-	if !checkNextToken(scan, scanner.TokenThen, list) {
-		return nil
-	}
-
-	// consequent comes from an expression
-	e.consequent = parseExpression(scan, list)
-	if e.consequent == nil {
-		return nil
-	}
-
-	// Expected token: else
-	if !checkNextToken(scan, scanner.TokenElse, list) {
-		return nil
-	}
-
-	// alternative comes from an expression
-	e.alternative = parseExpression(scan, list)
-	if e.alternative == nil {
-		return nil
-	}
-
-	// Expected token: end
-	checkNextToken(scan, scanner.TokenEnd, list)
-
-	return e
-}
-
-func parseLet(scan *scanner.Scanner, list *list.List) Expression {
-	var e = ExprLet{bindings: []Binding{}}
-
-	// continue reading until token "in" comes up.
-	// identifiers are connected with "and" token.
 	for {
-		// Expected token: identifier
-		t, succ := scan.NextToken()
-
-		if !succ {
+		if !p.expectPeek(token.LPAREN) {
 			return nil
 		}
 
-		if t.GetID() != scanner.TokenIdentifier {
-			list.PushBack(createError("Expected identifier after let.", t))
+		p.nextToken()
+		rec.Args = append(rec.Args, p.parseExpression())
+
+		if !p.expectPeek(token.RPAREN) {
 			return nil
 		}
 
-		b := Binding{ident: t.GetValue().(string)}
-
-		// Expected token: =
-		if !checkNextToken(scan, scanner.TokenEquals, list) {
-			return nil
+		if !p.peekTokenIs(token.LPAREN) {
+			break
 		}
-
-		// Expeced token: expression
-		if expr := parseExpression(scan, list); expr != nil {
-			b.expr = &expr
-		} else {
-			return nil
-		}
-
-		// Expected token: "and" (continue) or "in" (break)
-		t, succ = scan.NextToken()
-
-		if !succ {
-			return nil
-		}
-
-		if t.GetID() == scanner.TokenAnd {
-			continue
-		}
-
-		if !checkNextToken(scan, scanner.TokenIn) {
-			return nil
-		}
-
-		break
 	}
 
-	// Expected token: expression
-	e.expr = parseExpression(scan, list)
-
-	if e.expr == nil {
-		return nil
-	}
-
-}
-
-// Binary operator in the syntax: (a op b)
-// op = "&&" , "||" , "<" , "==" , "+" , "*"
-func parseBinaryOp(scan *scanner.Scanner, list *list.List) Expression {
-	var e ExprOperatorBinary
-
-	// a is another expression
-	e.e1 = parseExpression(scan, list)
-	if e.e1 == nil {
-		return nil
-	}
-
-	// Expected token: Operator
-	t, succ := scan.NextToken()
-
-	if !succ {
-		list.PushBack(createError("Unexpected ending. Expected an operator followed by an operand and a closing bracket", t))
-		return nil
-	}
-
-	if err := e.setOperator(t.GetID()); err != nil {
-		list.PushBack(createError(err.Error(), t))
-	}
-
-	// b is another expression
-	e.e2 = parseExpression(scan, list)
-	if e.e2 == nil {
-		return nil
-	}
-
-	// Expected token: Closing parantheses ')'
-	checkNextToken(scan, scanner.TokenCloseParen, list)
-
-	return e
+	return rec
 }
