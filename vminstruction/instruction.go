@@ -1,13 +1,23 @@
 package vminstruction
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
 
 type Instruction struct {
 	Name string
-	Args []int64
+	Args []*Arg
+}
+
+type Arg struct {
+	Value      int64
+	IsAbsolute bool
+}
+
+func (arg *Arg) String() string {
+	return fmt.Sprintf("(%d, %v)", arg.Value, arg.IsAbsolute)
 }
 
 func ReadInstructions(input string) []*Instruction {
@@ -25,17 +35,26 @@ func ReadInstructions(input string) []*Instruction {
 	return res
 }
 
-func convStrings(arr []string) []int64 {
-	res := make([]int64, len(arr))
+func convStrings(arr []string) []*Arg {
+	res := make([]*Arg, len(arr))
 
 	for i, s := range arr {
-		conv, err := strconv.ParseInt(s, 10, 64)
+		arg := &Arg{}
+		var err error
+
+		if s[0] == '$' {
+			arg.IsAbsolute = false
+			arg.Value, err = strconv.ParseInt(s[1:], 10, 64)
+		} else {
+			arg.IsAbsolute = true
+			arg.Value, err = strconv.ParseInt(s, 10, 64)
+		}
 
 		if err != nil {
 			panic(err)
 		}
 
-		res[i] = conv
+		res[i] = arg
 	}
 
 	return res

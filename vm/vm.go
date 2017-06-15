@@ -7,7 +7,7 @@ import "os"
 
 type VirtualMachine struct {
 	Instructions   []*vminstruction.Instruction
-	Funcs          []func(...int64)
+	Funcs          []func(...*vminstruction.Arg)
 	ProgramCounter int64
 	CallStack      []call
 	Values         []int64
@@ -23,7 +23,7 @@ type call struct {
 func New(instr []*vminstruction.Instruction) *VirtualMachine {
 	vm := &VirtualMachine{
 		Instructions:   instr,
-		Funcs:          make([]func(...int64), len(instr)),
+		Funcs:          make([]func(...*vminstruction.Arg), len(instr)),
 		ProgramCounter: 0,
 		CallStack:      []call{},
 		Values:         make([]int64, 1000000),
@@ -31,7 +31,7 @@ func New(instr []*vminstruction.Instruction) *VirtualMachine {
 	}
 
 	type tuple struct {
-		f    func(...int64)
+		f    func(...*vminstruction.Arg)
 		args int
 	}
 
@@ -80,66 +80,74 @@ func (vm *VirtualMachine) read(offset int64) int64 {
 	return vm.Values[vm.ValPointer+offset]
 }
 
+func (vm *VirtualMachine) getVal(arg *vminstruction.Arg) int64 {
+	if arg.IsAbsolute {
+		return arg.Value
+	}
+
+	return vm.read(arg.Value)
+}
+
 func (vm *VirtualMachine) write(offset int64, val int64) {
 	vm.Values[vm.ValPointer+offset] = val
 }
 
 // Move DST SRC
-func (vm *VirtualMachine) Move(args ...int64) {
-	vm.write(args[0], vm.read(args[1]))
+func (vm *VirtualMachine) Move(args ...*vminstruction.Arg) {
+	vm.write(args[0].Value, vm.getVal(args[1]))
 }
 
 // Set DST NUMBER
-func (vm *VirtualMachine) Set(args ...int64) {
-	vm.write(args[0], args[1])
+func (vm *VirtualMachine) Set(args ...*vminstruction.Arg) {
+	vm.write(args[0].Value, vm.getVal(args[1]))
 }
 
 // Add DST SRC1 SRC2
-func (vm *VirtualMachine) Add(args ...int64) {
-	vm.write(args[0], vm.read(args[1])+vm.read(args[2]))
+func (vm *VirtualMachine) Add(args ...*vminstruction.Arg) {
+	vm.write(args[0].Value, vm.getVal(args[1])+vm.getVal(args[2]))
 }
 
 // Multiply DST SRC1 SRC2
-func (vm *VirtualMachine) Multiply(args ...int64) {
-	vm.write(args[0], vm.read(args[1])+vm.read(args[2]))
+func (vm *VirtualMachine) Multiply(args ...*vminstruction.Arg) {
+	vm.write(args[0].Value, vm.getVal(args[1])*vm.getVal(args[2]))
 }
 
 // Negate DST SRC
-func (vm *VirtualMachine) Negate(args ...int64) {
-	vm.write(args[0], -vm.read(args[1]))
+func (vm *VirtualMachine) Negate(args ...*vminstruction.Arg) {
+	vm.write(args[0].Value, -vm.getVal(args[1]))
 }
 
 // Not DST SRC
-func (vm *VirtualMachine) Not(args ...int64) {
-	if vm.read(args[1]) != 0 {
-		vm.write(args[0], 0)
+func (vm *VirtualMachine) Not(args ...*vminstruction.Arg) {
+	if vm.getVal(args[1]) != 0 {
+		vm.write(args[0].Value, 0)
 	} else {
-		vm.write(args[0], 1)
+		vm.write(args[0].Value, 1)
 	}
 }
 
 // Jump INS
-func (vm *VirtualMachine) Jump(args ...int64) {
-	vm.ProgramCounter = args[0]
+func (vm *VirtualMachine) Jump(args ...*vminstruction.Arg) {
+	vm.ProgramCounter = vm.getVal(args[0])
 }
 
 // JumpIfZero SRC INS
-func (vm *VirtualMachine) JumpIfZero(args ...int64) {
-	if vm.read(args[0]) == 0 {
-		vm.ProgramCounter = args[1]
+func (vm *VirtualMachine) JumpIfZero(args ...*vminstruction.Arg) {
+	if vm.getVal(args[0]) == 0 {
+		vm.ProgramCounter = vm.getVal(args[1])
 	}
 }
 
 // Call INS NUMBER DST
-func (vm *VirtualMachine) Call(args ...int64) {
-	vm.CallStack = append(vm.CallStack, call{pc: vm.ProgramCounter, vp: vm.ValPointer, dst: args[2]})
-	vm.ValPointer += args[1]
-	vm.ProgramCounter = args[0]
+func (vm *VirtualMachine) Call(args ...*vminstruction.Arg) {
+	vm.CallStack = append(vm.CallStack, call{pc: vm.ProgramCounter, vp: vm.ValPointer, dst: vm.getVal(args[2])})
+	vm.ValPointer += vm.getVal(args[1])
+	vm.ProgramCounter = vm.getVal(args[0])
 }
 
 // Return SRC
-func (vm *VirtualMachine) Return(args ...int64) {
-	res := vm.read(args[0])
+func (vm *VirtualMachine) Return(args ...*vminstruction.Arg) {
+	res := vm.getVal(args[0])
 
 	if len(vm.CallStack) == 0 {
 		fmt.Println(res)
@@ -157,19 +165,19 @@ func (vm *VirtualMachine) Return(args ...int64) {
 }
 
 // LessThan DST SRC1 SRC2
-func (vm *VirtualMachine) LessThan(args ...int64) {
-	if args[1] < args[2] {
-		vm.write(args[0], 1)
+func (vm *VirtualMachine) LessThan(args ...*vminstruction.Arg) {
+	if vm.getVal(args[1]) < vm.getVal(args[2]) {
+		vm.write(args[0].Value, 1)
 	} else {
-		vm.write(args[0], 0)
+		vm.write(args[0].Value, 0)
 	}
 }
 
 // Equals DST SRC1 SRC2
-func (vm *VirtualMachine) Equals(args ...int64) {
-	if args[1] == args[2] {
-		vm.write(args[0], 1)
+func (vm *VirtualMachine) Equals(args ...*vminstruction.Arg) {
+	if vm.getVal(args[1]) == vm.getVal(args[2]) {
+		vm.write(args[0].Value, 1)
 	} else {
-		vm.write(args[0], 0)
+		vm.write(args[0].Value, 0)
 	}
 }
